@@ -1,0 +1,7 @@
+{
+  "$schema": "https://unpkg.com/knip@5/schema.json",
+  "ignoreExportsUsedInFile": true,
+  "ignoreDependencies": ["@earendil-works/pi-agent-core", "@earendil-works/pi-ai"],
+  "entry": ["continue.ts"],
+  "project": ["**/*.ts"]
+}
