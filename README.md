@@ -1,8 +1,14 @@
-# pi-invisible-continue
+<div align="center">
+
+# 👻 pi-invisible-continue
 
 Invisible session continuation for [pi](https://github.com/badlogic/pi) — resume the agentic loop **without the LLM seeing any new prompt at all**.
 
-## The problem
+</div>
+
+---
+
+## The Problem
 
 Every existing "continue" extension sends a **visible user message** to the LLM:
 
@@ -15,7 +21,9 @@ Every existing "continue" extension sends a **visible user message** to the LLM:
 
 Every one of those **changes the LLM's context** with new user text. That text influences the next response, sometimes in unintended ways — model changes course, re-reads things it already processed, or treats a bare `"continue"` as a new task.
 
-## The solution
+---
+
+## The Solution
 
 `pi-invisible-continue` uses the SDK's `pi.sendMessage()` with a custom message type (`role: "custom"`) and `triggerTurn: true`. The default `convertToLlm` function **filters out** everything except `user`, `assistant`, and `toolResult` roles. So:
 
@@ -26,6 +34,8 @@ Every one of those **changes the LLM's context** with new user text. That text i
 
 This is equivalent to the non-public `agent.continue()` API — without needing access to internals.
 
+---
+
 ## Usage
 
 Once loaded, use `/continue`:
@@ -35,6 +45,8 @@ Once loaded, use `/continue`:
 | `/continue` | Resume the loop invisibly. Waits for idle, then fires. |
 | `/continue status` | Show whether agent is idle and the last assistant message text (debug). |
 | `/continue help` | Show this reference. |
+
+---
 
 ## Installation
 
@@ -60,7 +72,9 @@ For quick one-off tests:
 pi -e ./continue.ts
 ```
 
-## How it works (30-second version)
+---
+
+## How It Works (30-Second Version)
 
 ```
 User types "/continue"
@@ -73,7 +87,9 @@ User types "/continue"
   → LLM sees same messages as before loop restart → responds naturally
 ```
 
-## Comparison with other packages
+---
+
+## Comparison with Other Packages
 
 | Feature | pi-invisible-continue | pi-continue | pi-hodor | pi-auto-continue |
 |---------|----------------------|-------------|----------|-------------------|
@@ -82,6 +98,8 @@ User types "/continue"
 | Auto-triggered | ❌ Manual only | ✅ On compaction | ✅ On error/length | ✅ On agent_end |
 | Retry integration | ❌ | ❌ | ✅ Error patterns | ❌ |
 | Complexity | 3 lines of core logic | 49 files, multi-stage | 2 files, config-driven | 1 file, loop-based |
+
+---
 
 ## Development
 
@@ -109,7 +127,9 @@ npm run lint:dead # Dead code detection (knip)
 └── knip.json
 ```
 
-## About the hack
+---
+
+## About the Hack
 
 The extension uses only the **public ExtensionAPI** — no monkey-patching, no internal access, no fragile closures. It leverages a property of pi's built-in `convertToLlm` (which every extension already depends on): custom-role messages don't reach the provider.
 
