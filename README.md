@@ -51,7 +51,7 @@ Once loaded, use `/continue`:
 ## Installation
 
 ```bash
-pi install git:github.com:monotykamary/pi-invisible-continue.git
+pi install https://github.com/monotykamary/pi-invisible-continue
 ```
 
 Or in `~/.pi/agent/settings.json`:
@@ -59,7 +59,7 @@ Or in `~/.pi/agent/settings.json`:
 ```json
 {
   "packages": [
-    "git:github.com:monotykamary/pi-invisible-continue.git"
+    "https://github.com/monotykamary/pi-invisible-continue"
   ]
 }
 ```
