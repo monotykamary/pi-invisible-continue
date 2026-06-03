@@ -2,9 +2,16 @@
 
 # 👻 pi-invisible-continue
 
-Invisible session continuation for [pi](https://github.com/badlogic/pi) — resume the agentic loop **without the LLM seeing any new prompt at all**.
+**Invisible session continuation for [pi](https://github.com/earendil-works/pi-coding-agent)**
+
+_Resume the agentic loop without the LLM seeing any new prompt at all._
+
+[![pi extension](https://img.shields.io/badge/pi-extension-blueviolet)](https://github.com/earendil-works/pi-coding-agent)
+[![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
 
 </div>
+
+---
 
 ---
 
