@@ -1,6 +1,6 @@
 import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-coding-agent";
+import { Agent } from "@earendil-works/pi-agent-core";
 import {
-  CONTINUE_CUSTOM_TYPE,
   CONTINUE_COMMAND_DESCRIPTION,
   getLastAssistantMessageText,
 } from "./src/index.js";
@@ -9,43 +9,40 @@ import {
  * pi-invisible-continue — resume the agentic loop without the LLM seeing any new prompt.
  *
  * Strategy:
- *   - /continue command calls pi.sendMessage() with a custom-type message
- *   - Default convertToLlm filters to user/assistant/toolResult only → custom message stripped
- *   - LLM receives unchanged context, loops naturally as if agent.continue() were called
- *   - Session gets one hidden entry (customType: "continue", display: false)
+ *   - Monkey-patch Agent.prototype.prompt to capture the Agent instance
+ *   - /continue calls agent.prompt([]) directly, starting a fresh agent loop
+ *     with an empty prompt — no message is injected into context at all
+ *   - The LLM receives the exact same message list it had before
+ *   - No session JSONL artifact, no convertToLlm involvement, no filter needed
  *
- * Cleaner than any existing package: no "continue" user-message pollution, no handoff doc,
- * no retry text.  The LLM never sees a new message.
+ * This bypasses AgentSession._runAgentPrompt, so auto-retry and auto-compaction
+ * are not triggered after a manual /continue. The user can always /continue again.
  */
+
+// Capture the live Agent instance when AgentSession subscribes to it.
+// subscribe() is called during AgentSession construction — fires on both
+// fresh sessions and session resumes, unlike prompt().
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+let _agent: Agent | null = null;
+const _origSubscribe = Agent.prototype.subscribe as (this: Agent, ...args: any[]) => any;
+Agent.prototype.subscribe = function (this: Agent, ...args: any[]) {
+  _agent = this;
+  return _origSubscribe.apply(this, args);
+};
 
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("continue", {
     description: CONTINUE_COMMAND_DESCRIPTION,
     handler: async (args, ctx) => {
-      await runContinueCommand(pi, ctx, args);
+      await runContinueCommand(ctx, args);
     },
-  });
-
-  // Strip hidden continue markers from context before each LLM call.
-  // This is insurance — convertToLlm already filters custom roles, but a
-  // custom convertToLlm override could leak them.  Clean proactively.
-  pi.on("context", async (event) => {
-    const cleaned = event.messages.filter(
-      (msg: any) =>
-        !(msg.role === "custom" && msg.customType === CONTINUE_CUSTOM_TYPE),
-    );
-    if (cleaned.length !== event.messages.length) {
-      return { messages: cleaned };
-    }
   });
 }
 
 async function runContinueCommand(
-  pi: ExtensionAPI,
   ctx: ExtensionCommandContext,
   args: string,
 ): Promise<void> {
-  // ---- subcommand: status -------------------------------------------------
   if (args.trim().toLowerCase() === "status") {
     const last = getLastAssistantMessageText(ctx.sessionManager.getEntries());
     const idle = ctx.isIdle();
@@ -53,6 +50,7 @@ async function runContinueCommand(
       [
         "pi-invisible-continue status:",
         `  Agent idle: ${idle ? "yes" : "no"}`,
+        `  Captured agent: ${_agent ? "yes" : "no"}`,
         `  Last assistant: ${last ?? "(none)"}`.slice(0, 120),
       ].join("\n"),
       "info",
@@ -60,7 +58,6 @@ async function runContinueCommand(
     return;
   }
 
-  // ---- subcommand: help ---------------------------------------------------
   if (args.trim().toLowerCase() === "help") {
     ctx.ui.notify(
       [
@@ -73,18 +70,17 @@ async function runContinueCommand(
     return;
   }
 
-  // ---- main: fire invisible continue --------------------------------------
+  if (!_agent) {
+    ctx.ui.notify(
+      "pi-invisible-continue: Agent instance not captured. Internal error?",
+      "warning",
+    );
+    return;
+  }
+
   if (!ctx.isIdle()) {
     await ctx.waitForIdle();
   }
 
-  pi.sendMessage(
-    {
-      customType: CONTINUE_CUSTOM_TYPE,
-      content: "",
-      display: false,
-      details: {},
-    },
-    { triggerTurn: true },
-  );
+  await _agent.prompt([]);
 }

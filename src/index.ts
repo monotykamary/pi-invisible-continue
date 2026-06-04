@@ -1,13 +1,9 @@
 /**
  * Shared constants and utilities for pi-invisible-continue.
  *
- * This module is kept lean — the extension itself is simple enough that
- * heavy shared logic is unnecessary.  The key constant and a session
- * introspection helper are the only exports.
+ * The extension is small enough that heavy shared logic is unnecessary.
+ * The command description and a session introspection helper are the only exports.
  */
-
-/** Custom type used for the invisible trigger message. */
-export const CONTINUE_CUSTOM_TYPE = "__invisible_continue";
 
 /** Description shown in the / commands list. */
 export const CONTINUE_COMMAND_DESCRIPTION =

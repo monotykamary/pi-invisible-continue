@@ -4,10 +4,9 @@ import {
   describeConstants,
   makeAssistantEntry,
   makeUserEntry,
-  makeCustomEntry,
 } from "../helpers.js";
 
-/** Shared constant / command-description checks. */
+/** Shared constant checks. */
 describe("constants", describeConstants);
 
 /** Session introspection (getLastAssistantMessageText). */
@@ -38,19 +37,9 @@ describe("getLastAssistantMessageText", () => {
   it("returns undefined when no assistant message exists", () => {
     const entries = [
       makeUserEntry("a"),
-      makeCustomEntry("__other", "x"),
       { type: "session", version: 1 },
     ] as any[];
     expect(getLastAssistantMessageText(entries)).toBeUndefined();
-  });
-
-  it("skips custom-role messages with the continue marker", () => {
-    const entries = [
-      makeAssistantEntry("real response"),
-      makeCustomEntry("__invisible_continue", ""),
-    ] as any[];
-    // The helper only looks at assistant messages — the custom entry is ignored.
-    expect(getLastAssistantMessageText(entries)).toBe("real response");
   });
 
   it("returns undefined when the last assistant has no text content", () => {

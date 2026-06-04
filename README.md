@@ -13,8 +13,6 @@ _Resume the agentic loop without the LLM seeing any new prompt at all._
 
 ---
 
----
-
 ## The Problem
 
 Every existing "continue" extension sends a **visible user message** to the LLM:
@@ -32,14 +30,37 @@ Every one of those **changes the LLM's context** with new user text. That text i
 
 ## The Solution
 
-`pi-invisible-continue` uses the SDK's `pi.sendMessage()` with a custom message type (`role: "custom"`) and `triggerTurn: true`. The default `convertToLlm` function **filters out** everything except `user`, `assistant`, and `toolResult` roles. So:
+`pi-invisible-continue` captures the internal `Agent` instance via a prototype monkey-patch on `Agent.prototype.prompt`. When `/continue` is invoked, it calls `agent.prompt([])` directly — starting a fresh agent loop with an **empty prompt array**. No message is injected into the context at all:
 
 - The agent loop restarts
 - The LLM receives **the exact same message list it had before**
-- No new text, no handoff, no pollution
-- One hidden `{ customType: "__invisible_continue", display: false }` entry is appended to the session JSONL
+- No new text, no handoff, no pollution, no session artifact
+- Nothing in `convertToLlm`'s path — no filtering needed
 
-This is equivalent to the non-public `agent.continue()` API — without needing access to internals.
+---
+
+## How It Works
+
+```
+Extension loads
+  → Monkey-patches Agent.prototype.prompt to capture the Agent instance
+  → First real prompt stores the reference
+
+User types "/continue"
+  → agent.prompt([]) called directly
+  → runAgentLoop([], contextSnapshot, ...)
+  → prompts array is empty — no message emitted, no message pushed to context
+  → runLoop → streamAssistantResponse → convertToLlm(unmodified messages)
+  → LLM sees same messages as before → responds naturally
+```
+
+### Why `agent.prompt([])` and not `agent.continue()`?
+
+`agent.continue()` has a guard that throws `Cannot continue from message role: assistant` when the last message is from the assistant — which it always is when the agent stops. `agent.prompt([])` starts a fresh loop from the current context snapshot without that restriction.
+
+### Trade-off: bypasses AgentSession
+
+`agent.prompt([])` is called on the `Agent` directly, bypassing `AgentSession._runAgentPrompt()`. This means auto-retry on errors and auto-compaction are not triggered after a `/continue`. For a manual command where the user explicitly said "keep going," this is acceptable — they can always `/continue` again.
 
 ---
 
@@ -50,7 +71,7 @@ Once loaded, use `/continue`:
 | Command | What it does |
 |---------|-------------|
 | `/continue` | Resume the loop invisibly. Waits for idle, then fires. |
-| `/continue status` | Show whether agent is idle and the last assistant message text (debug). |
+| `/continue status` | Show agent idle state, captured-agent status, and last assistant text (debug). |
 | `/continue help` | Show this reference. |
 
 ---
@@ -81,68 +102,26 @@ pi -e ./continue.ts
 
 ---
 
-## How It Works (30-Second Version)
-
-```
-User types "/continue"
-  → ExtensionCommandContext handler fires
-  → pi.sendMessage({ customType: "__invisible_continue", content: "", display: false }, { triggerTurn: true })
-  → agent.prompt([{ role: "custom", customType: "__invisible_continue", ... }])
-  → runAgentLoop pushes custom message into context.messages
-  → streamAssistantResponse calls convertToLlm(messages)
-  → convertToLlm filters out role "custom" → empty list for LLM
-  → LLM sees same messages as before loop restart → responds naturally
-```
-
----
-
 ## Comparison with Other Packages
 
 | Feature | pi-invisible-continue | pi-continue | pi-hodor | pi-auto-continue |
 |---------|----------------------|-------------|----------|-------------------|
 | LLM sees new user text | ❌ No | ✅ Handoff doc | ✅ "continue" | ✅ "continue" |
-| Session pollution | 1 hidden custom entry | Full compaction entry + user message | 1 user message | 1 user message |
+| Session pollution | None | Full compaction entry + user message | 1 user message | 1 user message |
+| Mechanism | `agent.prompt([])` | `sendMessage` + handoff | `sendMessage` | `sendMessage` |
 | Auto-triggered | ❌ Manual only | ✅ On compaction | ✅ On error/length | ✅ On agent_end |
 | Retry integration | ❌ | ❌ | ✅ Error patterns | ❌ |
-| Complexity | 3 lines of core logic | 49 files, multi-stage | 2 files, config-driven | 1 file, loop-based |
-
----
-
-## Development
-
-```bash
-npm install
-npm test          # Vitest unit tests
-npm run typecheck # TypeScript validation
-npm run lint:dead # Dead code detection (knip)
-```
-
-### Structure
-
-```
-.
-├── continue.ts         # Main extension
-├── src/
-│   └── index.ts        # Constants + session helpers
-├── __tests__/
-│   ├── helpers.ts      # Test utilities
-│   └── unit/
-│       └── continue.test.ts
-├── package.json
-├── tsconfig.json
-├── vitest.config.ts
-└── knip.json
-```
+| Complexity | Prototype patch + 1 call | 49 files, multi-stage | 2 files, config-driven | 1 file, loop-based |
 
 ---
 
 ## About the Hack
 
-The extension uses only the **public ExtensionAPI** — no monkey-patching, no internal access, no fragile closures. It leverages a property of pi's built-in `convertToLlm` (which every extension already depends on): custom-role messages don't reach the provider.
+The extension uses the public `@earendil-works/pi-agent-core` package (which pi's extension loader resolves to the same module instance used internally) to import `Agent` and monkey-patch `Agent.prototype.prompt`. This captures the live `Agent` instance when pi first calls `agent.prompt()` during normal operation.
 
-If a custom `convertToLlm` override is used that passes custom messages through, the extension includes a `context` event handler that strips `__invisible_continue` markers as an additional safety layer.
+Then `/continue` calls `agent.prompt([])` — an empty prompt array. The `runAgentLoop` function spreads the prompts into the context messages, so with an empty array, nothing is added. The loop starts from the unmodified context snapshot and the LLM continues naturally.
 
-This is the approach discussed in [pi issue #3721](https://github.com/earendil-works/pi/issues/3721) ("Feature request: Resume agentic loop without sending a message"). The upstream fix would be exposing `agent.continue()` on `AgentSession`, but this extension achieves the same effect without waiting for a core change.
+This is the approach discussed in [pi issue #3721](https://github.com/earendil-works/pi/issues/3721) ("Feature request: Resume agentic loop without sending a message"). The upstream fix would be exposing `agent.continue()` (or a variant that works from `assistant` last-message) on `AgentSession`, but this extension achieves the same effect without waiting for a core change.
 
 ## License
 
