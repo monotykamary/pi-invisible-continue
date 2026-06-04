@@ -60,7 +60,7 @@ User types "/continue"
 
 ### Trade-off: bypasses AgentSession
 
-`agent.prompt([])` is called on the `Agent` directly, bypassing `AgentSession._runAgentPrompt()`. This means auto-retry on errors and auto-compaction are not triggered after a `/continue`. For a manual command where the user explicitly said "keep going," this is acceptable — they can always `/continue` again.
+`agent.prompt([])` is called on the `Agent` directly, bypassing `AgentSession._runAgentPrompt()`. This means auto-compaction is not triggered after a `/continue`. Auto-retry is not a concern — [pi-retry](https://github.com/monotykamary/pi-retry) covers that gap by listening for `agent_end` events and re-triggering the loop on errors. Since the agent still emits events through `AgentSession`'s subscriber, pi-retry's handlers fire normally even after an `agent.prompt([])` continuation.
 
 ---
 

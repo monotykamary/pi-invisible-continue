@@ -15,8 +15,10 @@ import {
  *   - The LLM receives the exact same message list it had before
  *   - No session JSONL artifact, no convertToLlm involvement, no filter needed
  *
- * This bypasses AgentSession._runAgentPrompt, so auto-retry and auto-compaction
- * are not triggered after a manual /continue. The user can always /continue again.
+ * This bypasses AgentSession._runAgentPrompt, so auto-compaction is not
+ * triggered after a manual /continue. Auto-retry is not a concern — pi-retry
+ * covers that gap via its agent_end handler, which still fires because the
+ * agent's processEvents propagates to AgentSession's subscriber normally.
  */
 
 // Capture the live Agent instance when AgentSession subscribes to it.
