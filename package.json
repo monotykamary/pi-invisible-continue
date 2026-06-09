@@ -1,6 +1,6 @@
 {
   "name": "pi-invisible-continue",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Invisible session continuation for pi — resume the agentic loop without sending ANY prompt the LLM can see",
   "type": "module",
   "author": "Tom X Nguyen",
