@@ -9,7 +9,7 @@ import {
  * pi-invisible-continue — resume the agentic loop without the LLM seeing any new prompt.
  *
  * Strategy:
- *   - Monkey-patch Agent.prototype.prompt to capture the Agent instance
+ *   - Monkey-patch Agent.prototype.subscribe to capture the Agent instance
  *   - /continue calls agent.prompt([]) directly, starting a fresh agent loop
  *     with an empty prompt — no message is injected into context at all
  *   - The LLM receives the exact same message list it had before
@@ -24,6 +24,9 @@ import {
 // Capture the live Agent instance when AgentSession subscribes to it.
 // subscribe() is called during AgentSession construction — fires on both
 // fresh sessions and session resumes, unlike prompt().
+//
+// Chain the previous patch (if pi-retry or pi-vcc already patched it)
+// so all extensions can coexist.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 let _agent: Agent | null = null;
 const _origSubscribe = Agent.prototype.subscribe as (this: Agent, ...args: any[]) => any;
@@ -32,12 +35,53 @@ Agent.prototype.subscribe = function (this: Agent, ...args: any[]) {
   return _origSubscribe.apply(this, args);
 };
 
+// Mutex: only one invisible continue may be in-flight at a time.
+// Without this, concurrent /continue (or /continue during pi-retry/pi-vcc
+// auto-continuation) race through waitForIdle() and both call prompt([]),
+// producing "Agent is already processing".
+let _continueInProgress = false;
+
+// Monkey-patch continue() so the session's built-in loop cooperates with
+// our mutex. Without this, the session's continue() could race our
+// prompt([]) call and throw "Agent is already processing".
+// Chains the previous patch (pi-retry, pi-vcc) so all mutexes are respected.
+const _origContinue = Agent.prototype.continue;
+Agent.prototype.continue = function (this: Agent) {
+  const self = this;
+  return (async (): Promise<void> => {
+    while (_continueInProgress) {
+      await new Promise(r => setTimeout(r, 10));
+    }
+    try {
+      await _origContinue.call(self);
+    } catch (e: any) {
+      const msg = e?.message ?? '';
+      // After an invisible continue finishes, the transcript ends with a
+      // fresh assistant message.  The session's continue() sees this and
+      // would throw.  Catch and swallow — the while-loop will poll
+      // _handlePostAgentRun() again, find no error, and exit cleanly.
+      if (
+        msg.includes('Cannot continue from message role') ||
+        msg.includes('Cannot continue from an assistant message') ||
+        msg.includes('Agent is already processing')
+      ) {
+        return;
+      }
+      throw e;
+    }
+  })();
+};
+
 export default function (pi: ExtensionAPI) {
   pi.registerCommand("continue", {
     description: CONTINUE_COMMAND_DESCRIPTION,
     handler: async (args, ctx) => {
       await runContinueCommand(ctx, args);
     },
+  });
+
+  pi.on("session_start", () => {
+    _continueInProgress = false;
   });
 }
 
@@ -84,5 +128,25 @@ async function runContinueCommand(
     await ctx.waitForIdle();
   }
 
-  await _agent.prompt([]);
+  // Guard: if pi-retry or pi-vcc already has an invisible continue in-flight,
+  // skip — their prompt([]) will resume the loop.
+  if (_continueInProgress) {
+    ctx.ui.notify(
+      "pi-invisible-continue: Another invisible continue is already in progress.",
+      "info",
+    );
+    return;
+  }
+  _continueInProgress = true;
+
+  try {
+    await _agent.waitForIdle();
+    try {
+      await _agent.prompt([]);
+    } catch {
+      // Agent is already processing — something else is driving.
+    }
+  } finally {
+    _continueInProgress = false;
+  }
 }
