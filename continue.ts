@@ -42,8 +42,18 @@ Agent.prototype.subscribe = function (this: Agent, ...args: any[]) {
 let _continueInProgress = false;
 
 // Monkey-patch continue() so the session's built-in loop cooperates with
-// our mutex. Without this, the session's continue() could race our
-// prompt([]) call and throw "Agent is already processing".
+// our mutex AND can convert the "Cannot continue from assistant" error
+// into a prompt([]) call when the agent was mid-task.
+// Without this, the session's continue() would throw when the last message
+// is an assistant (common after compaction), and the agent loop would die
+// leaving mid-task work unfinished.
+//
+// When continue() throws "Cannot continue from message role: assistant":
+// - stopReason "stop" → agent finished cleanly, don't continue
+// - stopReason "aborted" → user cancelled, don't continue
+// - stopReason "error" → pi-retry handles errors, don't race it
+// - stopReason "toolUse" or "length" → mid-task, fall back to prompt([])
+//
 // Chains the previous patch (pi-retry, pi-vcc) so all mutexes are respected.
 const _origContinue = Agent.prototype.continue;
 Agent.prototype.continue = function (this: Agent) {
@@ -56,15 +66,30 @@ Agent.prototype.continue = function (this: Agent) {
       await _origContinue.call(self);
     } catch (e: any) {
       const msg = e?.message ?? '';
-      // After an invisible continue finishes, the transcript ends with a
-      // fresh assistant message.  The session's continue() sees this and
-      // would throw.  Catch and swallow — the while-loop will poll
-      // _handlePostAgentRun() again, find no error, and exit cleanly.
-      if (
-        msg.includes('Cannot continue from message role') ||
-        msg.includes('Cannot continue from an assistant message') ||
-        msg.includes('Agent is already processing')
-      ) {
+      if (msg.includes('Cannot continue from message role') ||
+          msg.includes('Cannot continue from an assistant message')) {
+        // Check stopReason — only continue if the agent was mid-task
+        const lastMsg = self.state.messages[self.state.messages.length - 1];
+        if (lastMsg?.role === 'assistant' &&
+            lastMsg.stopReason !== 'stop' &&
+            lastMsg.stopReason !== 'aborted' &&
+            lastMsg.stopReason !== 'error') {
+          // Agent was mid-task — fall back to prompt([])
+          if (!_continueInProgress) {
+            _continueInProgress = true;
+            try {
+              await self.prompt([]);
+            } catch {
+              // Agent already processing or other transient error
+            } finally {
+              _continueInProgress = false;
+            }
+          }
+        }
+        // For stop/aborted/error: return void, the session loop exits naturally
+        return;
+      }
+      if (msg.includes('Agent is already processing')) {
         return;
       }
       throw e;
