@@ -41,6 +41,11 @@ Agent.prototype.subscribe = function (this: Agent, ...args: any[]) {
 // producing "Agent is already processing".
 let _continueInProgress = false;
 
+// Timestamp of the last completed invisible continue.
+// Used to avoid double continuation when continue() unblocks after
+// triggerInvisibleContinue just ran.
+let _lastInvisibleContinueTime = 0;
+
 // Monkey-patch continue() so the session's built-in loop cooperates with
 // our mutex AND can convert the "Cannot continue from assistant" error
 // into a prompt([]) call when the agent was mid-task.
@@ -75,7 +80,8 @@ Agent.prototype.continue = function (this: Agent) {
             lastMsg.stopReason !== 'aborted' &&
             lastMsg.stopReason !== 'error') {
           // Agent was mid-task — fall back to prompt([])
-          if (!_continueInProgress) {
+          // Guard: if an invisible continue just completed, don't double-run
+          if (!_continueInProgress && Date.now() - _lastInvisibleContinueTime > 500) {
             _continueInProgress = true;
             try {
               await self.prompt([]);
@@ -107,6 +113,7 @@ export default function (pi: ExtensionAPI) {
 
   pi.on("session_start", () => {
     _continueInProgress = false;
+    _lastInvisibleContinueTime = 0;
   });
 }
 
@@ -173,5 +180,6 @@ async function runContinueCommand(
     }
   } finally {
     _continueInProgress = false;
+    _lastInvisibleContinueTime = Date.now();
   }
 }
