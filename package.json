@@ -1,6 +1,6 @@
 {
   "name": "pi-invisible-continue",
-  "version": "0.2.3",
+  "version": "0.3.0",
   "description": "Invisible session continuation for pi — resume the agentic loop without sending ANY prompt the LLM can see",
   "type": "module",
   "author": "Tom X Nguyen",
@@ -38,8 +38,6 @@
     "lint:dead": "knip --no-gitignore"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "0.75.4",
-    "@earendil-works/pi-ai": "0.75.4",
     "@earendil-works/pi-coding-agent": "0.75.4",
     "@types/node": "25.9.1",
     "@vitest/coverage-v8": "4.1.7",
