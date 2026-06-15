@@ -79,6 +79,12 @@ Once loaded, use `/continue`:
 ## Installation
 
 ```bash
+pi install npm:pi-invisible-continue
+```
+
+Or install from GitHub:
+
+```bash
 pi install https://github.com/monotykamary/pi-invisible-continue
 ```
 
