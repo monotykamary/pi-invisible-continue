@@ -63,6 +63,10 @@ let _lastInvisibleContinueTime = 0;
 // is an assistant (common after compaction), and the agent loop would die
 // leaving mid-task work unfinished.
 //
+// Note (pi 0.79+): Agent.continue() now drains queued steering/follow-up
+// messages before throwing, so this throw path only fires when there are
+// genuinely no queued messages — the prompt([]) fallback is still correct.
+//
 // When continue() throws "Cannot continue from message role: assistant":
 // - stopReason "stop" → agent finished cleanly, don't continue
 // - stopReason "aborted" → user cancelled, don't continue
