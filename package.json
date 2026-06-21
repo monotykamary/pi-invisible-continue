@@ -1,7 +1,7 @@
 {
   "name": "pi-invisible-continue",
   "version": "0.3.3",
-  "description": "Invisible session continuation for pi \u2014 resume the agentic loop without sending ANY prompt the LLM can see",
+  "description": "Invisible session continuation for pi — resume the agentic loop without sending ANY prompt the LLM can see",
   "type": "module",
   "author": "Tom X Nguyen",
   "license": "MIT",
@@ -55,5 +55,6 @@
     "brace-expansion": "5.0.6",
     "protobufjs": "8.4.0",
     "ws": "8.20.1"
-  }
+  },
+  "packageManager": "pnpm@11.6.0"
 }
