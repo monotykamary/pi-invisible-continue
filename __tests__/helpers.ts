@@ -6,10 +6,8 @@ import { CONTINUE_COMMAND_DESCRIPTION } from "../src/index.js";
  * Since pi-invisible-continue is intentionally small, the test surface
  * is focused on the shared constants and the session introspection helper.
  *
- * Extension event handlers (the Agent.prototype.prompt monkey-patch and
- * /continue command) are integration-tested by loading the extension in a
- * real pi session. Those tests live in the monorepo's integration suite
- * rather than here.
+ * The command transport and context filtering are covered by the unit suite;
+ * end-to-end provider behavior is exercised in Pi integration sessions.
  */
 
 export interface MockSessionEntry {

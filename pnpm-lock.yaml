@@ -8,9 +8,6 @@ importers:
 
   .:
     devDependencies:
-      '@earendil-works/pi-agent-core':
-        specifier: ^0.79.8
-        version: 0.79.8(ws@8.21.0)(zod@4.4.3)
       '@earendil-works/pi-coding-agent':
         specifier: ^0.79.8
         version: 0.79.8(ws@8.21.0)(zod@4.4.3)

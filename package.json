@@ -38,7 +38,6 @@
     "lint:dead": "knip --no-gitignore"
   },
   "devDependencies": {
-    "@earendil-works/pi-agent-core": "^0.79.8",
     "@earendil-works/pi-coding-agent": "^0.79.8",
     "@types/node": "25.9.1",
     "@vitest/coverage-v8": "4.1.7",

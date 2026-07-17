@@ -4,7 +4,7 @@
 
 **Invisible session continuation for [pi](https://github.com/earendil-works/pi-coding-agent)**
 
-_Resume the agentic loop without the LLM seeing any new prompt at all._
+_Resume the agentic loop without the LLM seeing a new prompt._
 
 [![pi extension](https://img.shields.io/badge/pi-extension-blueviolet)](https://github.com/earendil-works/pi-coding-agent)
 [![license](https://img.shields.io/badge/license-MIT-blue)](./LICENSE)
@@ -15,66 +15,66 @@ _Resume the agentic loop without the LLM seeing any new prompt at all._
 
 ## The Problem
 
-Every existing "continue" extension sends a **visible user message** to the LLM:
+Most “continue” extensions send user text to the LLM:
 
 | Package | What the LLM sees |
 |---------|-------------------|
-| `pi-continue` | `"Continue from the same-session pi-continue/v3 handoff Pi just saved..."` (full handoff doc) |
-| `pi-hodor` | `"continue"` (literal text) |
-| `pi-auto-continue` | `"continue"` (literal text) |
-| `pi-retry` | `"Continue"` on max-tokens, or hidden custom trigger on errors |
+| `pi-continue` | A full handoff document |
+| `pi-hodor` | `"continue"` |
+| `pi-auto-continue` | `"continue"` |
 
-Every one of those **changes the LLM's context** with new user text. That text influences the next response, sometimes in unintended ways — model changes course, re-reads things it already processed, or treats a bare `"continue"` as a new task.
-
----
+That text can influence the next response or be interpreted as a new task.
 
 ## The Solution
 
-`pi-invisible-continue` captures the internal `Agent` instance via a prototype monkey-patch on `Agent.prototype.prompt`. When `/continue` is invoked, it calls `agent.prompt([])` directly — starting a fresh agent loop with an **empty prompt array**. No message is injected into the context at all:
+`pi-invisible-continue` starts a normal Pi session turn with a hidden custom marker. A `context` hook removes that marker before provider serialization, so the LLM receives no new prompt text.
 
-- The agent loop restarts
-- The LLM receives **the exact same message list it had before**
-- No new text, no handoff, no pollution, no session artifact
-- Nothing in `convertToLlm`'s path — no filtering needed
+The continuation deliberately goes through `AgentSession`:
 
----
+- Pi’s session-level busy state remains accurate.
+- A concurrent prompt is queued through the native follow-up path rather than racing it.
+- Auto-retry, compaction, abort, and `agent_settled` behavior remain intact.
+- The marker is hidden from the TUI and filtered from every LLM request.
 
 ## How It Works
 
+`/continue` calls:
+
+```typescript
+pi.sendMessage(
+  {
+    customType: "pi-invisible-continue:resume",
+    content: [],
+    display: false,
+  },
+  {
+    triggerTurn: true,
+    deliverAs: "followUp",
+  },
+);
 ```
-Extension loads
-  → Monkey-patches Agent.prototype.prompt to capture the Agent instance
-  → First real prompt stores the reference
 
-User types "/continue"
-  → agent.prompt([]) called directly
-  → runAgentLoop([], contextSnapshot, ...)
-  → prompts array is empty — no message emitted, no message pushed to context
-  → runLoop → streamAssistantResponse → convertToLlm(unmodified messages)
-  → LLM sees same messages as before → responds naturally
-```
+Pi starts the turn immediately when idle or queues it when another turn is active. Before the provider request, the extension removes its custom marker from `event.messages`.
 
-### Why `agent.prompt([])` and not `agent.continue()`?
+### Why not `Agent.prompt([])`?
 
-`agent.continue()` has a guard that throws `Cannot continue from message role: assistant` when the last message is from the assistant — which it always is when the agent stops. `agent.prompt([])` starts a fresh loop from the current context snapshot without that restriction.
+Calling the low-level agent directly bypasses `AgentSession._runAgentPrompt()`. Pi can then report the session as idle while `Agent.activeRun` is already processing. A user prompt may be routed as a fresh prompt and fail with:
 
-### Trade-off: bypasses AgentSession
+> Agent is already processing a prompt. Use steer() or followUp() to queue messages, or wait for completion.
 
-`agent.prompt([])` is called on the `Agent` directly, bypassing `AgentSession._runAgentPrompt()`. This means auto-compaction is not triggered after a `/continue`. Auto-retry is not a concern — [pi-retry](https://github.com/monotykamary/pi-retry) covers that gap by listening for `agent_end` events and re-triggering the loop on errors. Since the agent still emits events through `AgentSession`'s subscriber, pi-retry's handlers fire normally even after an `agent.prompt([])` continuation.
+Using `sendMessage` keeps one authoritative lifecycle and avoids that split-brain busy state.
 
----
+### Session artifact
+
+The session journal contains one hidden custom entry per continuation. It has no display content and is removed before every provider call, but it is still bookkeeping in the saved session. This is the correctness trade-off until Pi exposes a public session-level resume API that adds no entry.
 
 ## Usage
 
-Once loaded, use `/continue`:
-
 | Command | What it does |
 |---------|-------------|
-| `/continue` | Resume the loop invisibly. Waits for idle, then fires. |
-| `/continue status` | Show agent idle state, captured-agent status, and last assistant text (debug). |
-| `/continue help` | Show this reference. |
-
----
+| `/continue` | Start or queue an invisible continuation. |
+| `/continue status` | Show session idle state and the last assistant text. |
+| `/continue help` | Show the command reference. |
 
 ## Installation
 
@@ -88,7 +88,7 @@ Or install from GitHub:
 pi install https://github.com/monotykamary/pi-invisible-continue
 ```
 
-Or in `~/.pi/agent/settings.json`:
+Or add it to `~/.pi/agent/settings.json`:
 
 ```json
 {
@@ -98,36 +98,25 @@ Or in `~/.pi/agent/settings.json`:
 }
 ```
 
-Then `/reload` or restart pi.
+Then run `/reload` or restart Pi.
 
-For quick one-off tests:
+For a one-off test:
 
 ```bash
 pi -e ./continue.ts
 ```
 
----
-
-## Comparison with Other Packages
+## Comparison
 
 | Feature | pi-invisible-continue | pi-continue | pi-hodor | pi-auto-continue |
 |---------|----------------------|-------------|----------|-------------------|
-| LLM sees new user text | ❌ No | ✅ Handoff doc | ✅ "continue" | ✅ "continue" |
-| Session pollution | None | Full compaction entry + user message | 1 user message | 1 user message |
-| Mechanism | `agent.prompt([])` | `sendMessage` + handoff | `sendMessage` | `sendMessage` |
-| Auto-triggered | ❌ Manual only | ✅ On compaction | ✅ On error/length | ✅ On agent_end |
-| Retry integration | ❌ | ❌ | ✅ Error patterns | ❌ |
-| Complexity | Prototype patch + 1 call | 49 files, multi-stage | 2 files, config-driven | 1 file, loop-based |
+| LLM sees new user text | No | Handoff doc | `"continue"` | `"continue"` |
+| Visible transcript entry | No | Yes | Yes | Yes |
+| Hidden session bookkeeping | One custom entry | Compaction + user entry | User entry | User entry |
+| Native session lifecycle | Yes | Yes | Yes | Yes |
+| Auto-triggered | No | On compaction | On error/length | On `agent_end` |
 
----
-
-## About the Hack
-
-The extension uses the public `@earendil-works/pi-agent-core` package (which pi's extension loader resolves to the same module instance used internally) to import `Agent` and monkey-patch `Agent.prototype.prompt`. This captures the live `Agent` instance when pi first calls `agent.prompt()` during normal operation.
-
-Then `/continue` calls `agent.prompt([])` — an empty prompt array. The `runAgentLoop` function spreads the prompts into the context messages, so with an empty array, nothing is added. The loop starts from the unmodified context snapshot and the LLM continues naturally.
-
-This is the approach discussed in [pi issue #3721](https://github.com/earendil-works/pi/issues/3721) ("Feature request: Resume agentic loop without sending a message"). The upstream fix would be exposing `agent.continue()` (or a variant that works from `assistant` last-message) on `AgentSession`, but this extension achieves the same effect without waiting for a core change.
+The desired upstream primitive is a public `AgentSession.resume()` operation that preserves native lifecycle behavior without adding a marker. Until then, a filtered custom message is safer than bypassing the session.
 
 ## License
 

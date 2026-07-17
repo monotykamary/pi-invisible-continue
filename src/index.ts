@@ -1,18 +1,19 @@
-/**
- * Shared constants and utilities for pi-invisible-continue.
- *
- * The extension is small enough that heavy shared logic is unnecessary.
- * The command description and a session introspection helper are the only exports.
- */
+/** Shared constants and utilities for pi-invisible-continue. */
 
-/** Description shown in the / commands list. */
 export const CONTINUE_COMMAND_DESCRIPTION =
   "Resume the agentic loop without sending a prompt the LLM can read";
 
-/**
- * Extract the text content of the last assistant message in the session.
- * Returns undefined if no assistant message exists.
- */
+export const INVISIBLE_CONTINUE_CUSTOM_TYPE = "pi-invisible-continue:resume";
+
+export function isInvisibleContinueMarker(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const candidate = message as { role?: unknown; customType?: unknown };
+  return (
+    candidate.role === "custom" &&
+    candidate.customType === INVISIBLE_CONTINUE_CUSTOM_TYPE
+  );
+}
+
 export function getLastAssistantMessageText(
   entries: ReadonlyArray<{ type: string; message?: { role?: string; content?: unknown } }>,
 ): string | undefined {
@@ -21,17 +22,17 @@ export function getLastAssistantMessageText(
     if (
       entry.type === "message" &&
       entry.message?.role === "assistant" &&
-      entry.message?.content
+      entry.message.content
     ) {
       const content = entry.message.content;
       if (typeof content === "string") return content;
       if (Array.isArray(content)) {
         const textBlocks = content.filter(
-          (block: any): block is { type: "text"; text: string } =>
-            typeof block === "object" &&
-            block !== null &&
-            block.type === "text" &&
-            typeof block.text === "string",
+          (block: unknown): block is { type: "text"; text: string } => {
+            if (!block || typeof block !== "object") return false;
+            const candidate = block as { type?: unknown; text?: unknown };
+            return candidate.type === "text" && typeof candidate.text === "string";
+          },
         );
         if (textBlocks.length === 0) return undefined;
         return textBlocks.map((block) => block.text).join("\n");
