@@ -62,6 +62,65 @@ describe("getLastAssistantMessageText", () => {
   });
 });
 
+describe("trailing failed assistant stripping", () => {
+  const marker = { role: "custom", customType: INVISIBLE_CONTINUE_CUSTOM_TYPE, content: [] };
+  const user = { role: "user", content: [{ type: "text", text: "go" }] };
+  const failed = {
+    role: "assistant",
+    content: [{ type: "text", text: "boom" }],
+    stopReason: "error",
+    errorMessage: "429 too many requests",
+  };
+  const aborted = { role: "assistant", content: [], stopReason: "aborted" };
+  const done = { role: "assistant", content: [{ type: "text", text: "ok" }], stopReason: "stop" };
+  const toolUse = {
+    role: "assistant",
+    content: [{ type: "toolCall", id: "t1", name: "bash", arguments: {} }],
+    stopReason: "toolUse",
+  };
+
+  function contextFor(messages: unknown[]): unknown[] | undefined {
+    const handlers: Record<string, Array<(event: any, ctx: any) => any>> = {};
+    const pi = {
+      on(event: string, handler: (event: any, ctx: any) => any) {
+        (handlers[event] ??= []).push(handler);
+      },
+      registerCommand() {},
+      sendMessage: vi.fn(),
+    };
+    invisibleContinueExtension(pi as any);
+    return handlers.context[0]({ messages }, {})?.messages;
+  }
+
+  it("strips a retry-exhausted error assistant before continuing", () => {
+    expect(contextFor([user, failed, marker])).toEqual([user]);
+  });
+
+  it("strips stacked retry attempts", () => {
+    expect(contextFor([user, failed, aborted, marker])).toEqual([user]);
+  });
+
+  it("keeps completed assistant messages", () => {
+    expect(contextFor([user, done, marker])).toEqual([user, done]);
+  });
+
+  it("stops stripping at a user message boundary", () => {
+    expect(contextFor([user, failed, user, marker])).toEqual([user, failed, user]);
+  });
+
+  it("never strips an assistant carrying toolCall blocks", () => {
+    expect(contextFor([user, toolUse, marker])).toEqual([user, toolUse]);
+  });
+
+  it("does not touch trailing failures when no marker is present", () => {
+    expect(contextFor([user, failed])).toBeUndefined();
+  });
+
+  it("keeps at least one message to avoid an empty context", () => {
+    expect(contextFor([failed, marker])).toEqual([failed]);
+  });
+});
+
 describe("AgentSession-safe continuation", () => {
   function setup() {
     const handlers: Record<string, Array<(event: any, ctx: any) => any>> = {};

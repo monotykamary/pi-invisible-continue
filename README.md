@@ -35,6 +35,7 @@ The continuation deliberately goes through `AgentSession`:
 - A concurrent prompt is queued through the native follow-up path rather than racing it.
 - Auto-retry, compaction, abort, and `agent_settled` behavior remain intact.
 - The marker is hidden from the TUI and filtered from every LLM request.
+- When a continuation starts after pi's auto-retry is exhausted, the trailing failed assistant attempts (`stopReason: "error"`/`"aborted"`, no tool calls) are also dropped from the request — the LLM never sees the failure either.
 
 ## How It Works
 

@@ -14,6 +14,54 @@ export function isInvisibleContinueMarker(message: unknown): boolean {
   );
 }
 
+const INCOMPLETE_ASSISTANT_STOP_REASONS = new Set(["error", "aborted"]);
+
+export function isIncompleteAssistantMessage(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const candidate = message as { role?: unknown; stopReason?: unknown };
+  return (
+    candidate.role === "assistant" &&
+    typeof candidate.stopReason === "string" &&
+    INCOMPLETE_ASSISTANT_STOP_REASONS.has(candidate.stopReason)
+  );
+}
+
+export function hasToolCallBlocks(message: unknown): boolean {
+  if (!message || typeof message !== "object") return false;
+  const content = (message as { content?: unknown }).content;
+  return (
+    Array.isArray(content) &&
+    content.some(
+      (block) =>
+        !!block &&
+        typeof block === "object" &&
+        (block as { type?: unknown }).type === "toolCall",
+    )
+  );
+}
+
+/**
+ * Pop trailing incomplete assistant attempts (retry-exhausted errors, aborts)
+ * so a continuation does not re-serve the failed run to the LLM.
+ *
+ * Guards: stops at the first message that is not an incomplete assistant,
+ * never pops an assistant carrying toolCall blocks (their tool results must
+ * stay paired), and never empties the context entirely.
+ */
+export function stripTrailingIncompleteAssistants<T>(
+  messages: ReadonlyArray<T>,
+): T[] {
+  const stripped = [...messages];
+  while (
+    stripped.length > 1 &&
+    isIncompleteAssistantMessage(stripped[stripped.length - 1]) &&
+    !hasToolCallBlocks(stripped[stripped.length - 1])
+  ) {
+    stripped.pop();
+  }
+  return stripped;
+}
+
 export function getLastAssistantMessageText(
   entries: ReadonlyArray<{ type: string; message?: { role?: string; content?: unknown } }>,
 ): string | undefined {

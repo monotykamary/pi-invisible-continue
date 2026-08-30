@@ -4,6 +4,7 @@ import {
   INVISIBLE_CONTINUE_CUSTOM_TYPE,
   getLastAssistantMessageText,
   isInvisibleContinueMarker,
+  stripTrailingIncompleteAssistants,
 } from "./src/index.js";
 
 /**
@@ -13,8 +14,10 @@ import {
  */
 export default function invisibleContinueExtension(pi: ExtensionAPI) {
   pi.on("context", (event) => {
+    const hasMarker = event.messages.some((message) => isInvisibleContinueMarker(message));
     const messages = event.messages.filter((message) => !isInvisibleContinueMarker(message));
-    if (messages.length !== event.messages.length) return { messages };
+    const next = hasMarker ? stripTrailingIncompleteAssistants(messages) : messages;
+    if (next.length !== event.messages.length) return { messages: next };
   });
 
   pi.registerCommand("continue", {
