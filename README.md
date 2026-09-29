@@ -13,6 +13,14 @@ _Resume the agentic loop without the LLM seeing a new prompt._
 
 ---
 
+## Pi 0.99 compatibility (0.3.14)
+
+Tested with Pi **0.99.0**. Host-provided Pi packages and TypeBox are peers (`*`), not bundled runtime dependencies; development uses exact Pi 0.99.0 pins and host-compatible TypeBox where needed.
+
+Invisible continuation retains Pi's native session queues and strips only its hidden marker from provider context; native system/tool declarations remain intact.
+
+Run `bun run test:host` for the offline real-host load, native codemode/nested-call, module-identity and reload checks. Set `PI99_HOST_PACKAGE` to an installed Pi package directory to test that host explicitly; add `PI99_HOST_ENTRY=bundle` to check the bundled CLI runtime's constructors.
+
 ## The Problem
 
 Most “continue” extensions send user text to the LLM:
